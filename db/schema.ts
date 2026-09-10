@@ -7,3 +7,7 @@ export const commands = sqliteTable('mission_commands', {
  id:integer('id').primaryKey({autoIncrement:true}), sessionId:text('session_id').notNull().references(()=>sessions.id,{onDelete:'cascade'}),
  requestId:text('request_id').notNull(), payload:text('payload').notNull(),
 },t=>[uniqueIndex('mission_request').on(t.sessionId,t.requestId),index('mission_queue').on(t.sessionId,t.id)]);
+export const events = sqliteTable('mission_events', {
+ id:integer('id').primaryKey({autoIncrement:true}), sessionId:text('session_id').notNull().references(()=>sessions.id,{onDelete:'cascade'}),
+ payload:text('payload').notNull(),
+},t=>[index('mission_event_queue').on(t.sessionId,t.id)]);
