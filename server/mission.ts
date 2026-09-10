@@ -3,6 +3,7 @@ import { initialGame,start,inject,randomChaos,interpretRehearsal,tick,rehearse,p
 import type { Game,ScenarioId } from '../game/engine.ts';
 import { Astra } from './astra.ts';
 import { MissionClock } from '../game/clock.ts';
+import { connectAstra } from './connect-astra.ts';
 export type Env={OPENAI_API_KEY?:string;LIVE_MODE_ENABLED?:string;DB?:D1Database};
 export const missionMessage=z.discriminatedUnion('type',[
  z.object({type:z.literal('start'),mode:z.enum(['rehearsal','live']),requestId:z.string().max(80)}).strict(),
@@ -61,7 +62,7 @@ export function attachMission(socket:MissionChannel,env:Env,req:Request){
       const quota=starts.get(ip)||{at:now,count:0};if(quota.count>=5)throw Error('Live mission limit reached. Try rehearsal.');
       if(liveCount>=2)throw Error('Both live mission slots are occupied. Try rehearsal or return shortly.');
       quota.count++;starts.set(ip,quota);liveCount++;liveSlot=true;
-      const response=await fetch('https://api.openai.com/v1/responses',{headers:{Upgrade:'websocket',Authorization:`Bearer ${env.OPENAI_API_KEY}`},signal:AbortSignal.timeout(15000)});
+      const response=await connectAstra(env.OPENAI_API_KEY!);
       if(!response.webSocket)throw Error(response.status===401||response.status===403?'Astra API access needs configuration. Rehearsal is available.':'Could not connect to Astra. Rehearsal is available.');
       upstream=response.webSocket;upstream.accept();
     }
