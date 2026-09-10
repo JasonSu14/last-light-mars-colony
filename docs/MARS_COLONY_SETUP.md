@@ -8,7 +8,7 @@ Open the cloned repository as a Codex project. Select GPT-6 Astra with medium re
 
 Use this continuation prompt:
 
-> Continue LAST LIGHT from README.md and docs/MARS_COLONY_BUILD_BRIEF.md. Preserve the polished three-minute rehearsal demo. Verify the native Astra integration with official documentation and an actual API run before enabling live mode. Keep secrets server-side. Run the relevant tests and production build, then publish the existing Sites project and update GitHub. Do not add accounts, a database, or a large game engine.
+> Continue LAST LIGHT from README.md and docs/MARS_COLONY_BUILD_BRIEF.md. Preserve the polished three-minute rehearsal demo. Verify the native Astra integration with official documentation and an actual API run before enabling live mode. Keep secrets server-side. Run the relevant tests and production build, then publish the existing Sites project and update GitHub. Preserve the small D1 command mailbox; do not add accounts or a large game engine. Do not enable paid API requests until the owner approves a budget.
 
 ## 2. Run the existing app
 
@@ -21,13 +21,13 @@ npm run install:ci
 npm run dev
 ```
 
-Open http://localhost:5173 and press Begin rehearsal. Rehearsal does not need billing or an API key.
+Open http://localhost:5173 and press Start the chaos. Rehearsal does not need billing or an API key.
 
 ## 3. Create and store the API key securely
 
 Codex sign-in and a connected plugin are not an API key for the deployed app. An OpenAI API project needs billing and access to `gpt-6-astra`.
 
-In Codex, enable OpenAI Developers and connect its OpenAI Platform dependency. Ask Codex to create a project-scoped key securely for this app and store it as the Sites secret `OPENAI_API_KEY`. This task has already been authorized to create a new key, but its secure key-creation tools have not become available. A fresh Codex task in this repository may be needed to load newly enabled tools. Do not paste a key into chat.
+In Codex, enable OpenAI Developers and connect its OpenAI Platform dependency. Ask Codex to create a project-scoped key securely for this app and store it as the Sites secret `OPENAI_API_KEY`. The owner has deferred API setup and budgeting. Keep live mode disabled until explicit approval to use credits. Secure key-creation tools were not available in the previous setup attempt. A fresh Codex task in this repository may be needed to load newly enabled tools. Do not paste a key into chat.
 
 For manual local development, create a key in the OpenAI Platform dashboard and save it directly into an ignored `.dev.vars` file in a local editor:
 
@@ -55,22 +55,22 @@ Official references: [Astra model](https://developers.openai.com/api/docs/models
 ```bash
 npm run typecheck
 npm test
-npm run check:socket
+npm run check:stream
 npm run build
 npm start
 ```
 
-The socket check requires the development server. A production socket check uses:
+The HTTP stream check requires a local built server with D1. Follow the README migration setup first. It uses the free server rehearsal operator:
 
 ```bash
-npm run check:socket -- http://127.0.0.1:8787
+npm run check:stream -- http://127.0.0.1:8787
 ```
 
 Native protocol tests use fixtures. Record actual live test results separately and never present fixture success as live model verification.
 
 ## 5. GitHub
 
-The project repository is https://github.com/JasonSu14/last-light-mars-colony. It was created private; the playable website can be public independently. Once source is uploaded, clone that repository for future GitHub work.
+The project repository is https://github.com/JasonSu14/last-light-mars-colony. It was created private; the playable website can be public independently. The full codebase is uploaded. Clone that repository for future GitHub work.
 
 For a completely new repository instead, install GitHub CLI, authenticate, and run these commands from your new project root:
 
@@ -88,17 +88,17 @@ Do not run the creation command against the existing repository. Future updates 
 
 Public rehearsal: https://last-light-mars-colony.skater9114.chatgpt.site. Rehearsal executes in browser memory, using the shared simulation engine, and needs no API or WebSocket connection.
 
-**Known live hosting blocker:** the current Sites gateway rejects the inbound mission WebSocket. Local server checks pass, but a hosted live round needs this resolved or a WebSocket-capable live backend before enabling it.
+**Connection update:** the browser now uses HTTP event polling and authenticated commands through temporary D1 mailboxes. This avoids the gateway’s rejected inbound WebSocket upgrade. The outgoing Astra connection still needs a real, explicitly authorized API test.
 
 The existing `.openai/hosting.json` identifies the registered Site. Ask Codex to use Sites to validate the app, push the exact source, package the Worker build, save it, and publish publicly. Codex should wait for successful hosting before returning the production URL.
 
 Rehearsal works without environment configuration. For live operation, configure `OPENAI_API_KEY` as a Sites secret and `LIVE_MODE_ENABLED=true` only after the live checks pass. Changing local `.dev.vars` does not configure hosting.
 
-The current deployment is designed for a hackathon. Session and IP limits are per Worker isolate; they are not a durable global spend cap. Keep the public rehearsal available and use controlled access or durable quotas before opening paid live play to a large audience.
+The current deployment is designed for a hackathon. D1 enforces two active HTTP live sessions globally; IP start limits remain per Worker isolate. These are not a dollar spend cap. Keep the public rehearsal available and use controlled access or durable quotas before opening paid live play to a large audience.
 
 ## Suggested remaining demo work
 
 1. Resolve secure API provisioning and verify native Astra end to end.
-2. Rehearse a three-minute story: oxygen processor failure, repair in progress, then dust storm.
+2. Rehearse a three-minute story: oxygen processor failure, repair in progress, then dust storm. Open the finite supply kit and action receipts to show costs, measured integrity changes, and the no-operator comparison. Label rehearsals as scripted.
 3. Record a short backup rehearsal demo, clearly labeled as rehearsal.
 4. Share the public game URL and GitHub source link.
