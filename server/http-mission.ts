@@ -6,9 +6,9 @@ const json=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cac
 async function hash(value:string){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),b=>b.toString(16).padStart(2,'0')).join('');}
 async function body(req:Request){const raw=await req.text();if(raw.length>2000)throw Error('Command too large.');return JSON.parse(raw);}
 
-/** HTTP streaming avoids inbound WebSocket upgrades rejected by the hosting gateway.
+/** HTTP event polling avoids inbound WebSocket upgrades and stream buffering.
  * D1 coordinates commands across Worker instances; each stream owns one simulation.
- * Tokens stay in browser memory, never URLs. No game state or API secrets enter D1.
+ * Tokens stay in browser memory, never URLs. Temporary game events enter D1; API secrets never do.
  */
 export async function httpMission(req:Request,env:Env,ctx:ExecutionContext):Promise<Response>{
  const origin=req.headers.get('Origin');if(origin&&origin!==new URL(req.url).origin)return json({error:'Origin not allowed.'},403);
@@ -25,7 +25,7 @@ export async function httpMission(req:Request,env:Env,ctx:ExecutionContext):Prom
    if(!result.meta.changes)return json({error:'Mission slots are busy. Try again shortly.'},429);
    return json({id,token},201);
   }
-  const match=/^\/api\/missions\/([a-f0-9-]+)(?:\/(stream|commands))?$/.exec(path);
+  const match=/^\/api\/missions\/([a-f0-9-]+)(?:\/(stream|commands|events))?$/.exec(path);
   if(!match)return json({error:'Unknown mission route.'},404);
   const token=req.headers.get('Authorization')?.replace(/^Bearer /,'');
   if(!token||token.length>200)return json({error:'Mission access required.'},401);
@@ -33,6 +33,12 @@ export async function httpMission(req:Request,env:Env,ctx:ExecutionContext):Prom
   if(!session)return json({error:'Mission expired. Start a fresh mission.'},404);
   if(!match[2]&&req.method==='DELETE'){
    await db.prepare("UPDATE mission_sessions SET status = 'closed' WHERE id = ?").bind(session.id).run();return json({ok:true});
+  }
+  if(match[2]==='events'&&req.method==='GET'){
+   const cursor=Number(new URL(req.url).searchParams.get('after')||0);
+   if(!Number.isSafeInteger(cursor)||cursor<0)return json({error:'Invalid event cursor.'},400);
+   const rows=await db.prepare('SELECT id,payload FROM mission_events WHERE session_id = ? AND id > ? ORDER BY id LIMIT 100').bind(session.id,cursor).all<{id:number;payload:string}>();
+   return json({events:rows.results.map(row=>({id:row.id,event:JSON.parse(row.payload)})),closed:session.status==='closed'});
   }
   if(match[2]==='commands'&&req.method==='POST'){
    if(session.status!=='streaming')return json({error:'Mission is not connected.'},409);
@@ -46,9 +52,14 @@ export async function httpMission(req:Request,env:Env,ctx:ExecutionContext):Prom
   const claimed=await db.prepare("UPDATE mission_sessions SET status = 'streaming' WHERE id = ? AND status = 'created'").bind(session.id).run();
   if(!claimed.meta.changes)return json({error:'This mission already has a connection.'},409);
   const encoder=new TextEncoder();let controller:ReadableStreamDefaultController<Uint8Array>,closed=false,timer:ReturnType<typeof setTimeout>|undefined;
+  let writes=Promise.resolve<unknown>(undefined);let previousSnapshot='';
   const listeners=new Map<string,Array<(event:{data?:unknown})=>void>>();
-  const close=()=>{if(closed)return;closed=true;clearTimeout(timer);for(const listener of listeners.get('close')||[])listener({});try{controller.close();}catch{}ctx.waitUntil(db.prepare("UPDATE mission_sessions SET status = 'closed' WHERE id = ?").bind(session.id).run().catch(()=>{}));};
-  const channel:MissionChannel={send(data){if(!closed)controller.enqueue(encoder.encode(`data: ${data}\n\n`));},close,addEventListener(type,listener){listeners.set(type,[...(listeners.get(type)||[]),listener]);}};
+  const close=()=>{if(closed)return;closed=true;clearTimeout(timer);for(const listener of listeners.get('close')||[])listener({});try{controller.close();}catch{}ctx.waitUntil(writes.then(()=>db.prepare("UPDATE mission_sessions SET status = 'closed' WHERE id = ?").bind(session.id).run()).catch(()=>{}));};
+  const channel:MissionChannel={send(data){if(closed)return;controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+   const isSnapshot=JSON.parse(data).type==='snapshot';if(isSnapshot&&data===previousSnapshot)return;if(isSnapshot)previousSnapshot=data;
+   writes=writes.then(()=>db.prepare('INSERT INTO mission_events (session_id,payload) VALUES (?,?)').bind(session.id,data).run());
+   void writes.catch(close);
+  },close,addEventListener(type,listener){listeners.set(type,[...(listeners.get(type)||[]),listener]);}};
   const receive=async(data:unknown)=>{for(const listener of listeners.get('message')||[])await listener({data:JSON.stringify(data)});};
   let cursor=0;
   const poll=async()=>{
@@ -58,7 +69,7 @@ export async function httpMission(req:Request,env:Env,ctx:ExecutionContext):Prom
     if(state?.status!=='streaming'){close();return;}
     const rows=await db.prepare('SELECT id,payload FROM mission_commands WHERE session_id = ? AND id > ? ORDER BY id LIMIT 100').bind(session.id,cursor).all<{id:number;payload:string}>();
     for(const row of rows.results){if(closed)return;cursor=row.id;await receive(JSON.parse(row.payload));}
-    await receive({type:'heartbeat'});
+    await receive({type:'heartbeat'});await writes;
     if(!closed)timer=setTimeout(()=>{void poll();},750);
    }catch{try{channel.send(JSON.stringify({type:'error',message:'The mission connection ended. Start a fresh mission.'}));}finally{close();}}
   };
