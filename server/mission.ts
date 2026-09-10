@@ -2,10 +2,12 @@ import { z } from 'zod';
 import { initialGame,start,inject,randomChaos,interpretRehearsal,tick,rehearse,publicGame,log } from '../game/engine.ts';
 import type { Game,ScenarioId } from '../game/engine.ts';
 import { Astra } from './astra.ts';
-export type Env={OPENAI_API_KEY?:string;LIVE_MODE_ENABLED?:string};
-const message=z.discriminatedUnion('type',[
+import { MissionClock } from '../game/clock.ts';
+export type Env={OPENAI_API_KEY?:string;LIVE_MODE_ENABLED?:string;DB?:D1Database};
+export const missionMessage=z.discriminatedUnion('type',[
  z.object({type:z.literal('start'),mode:z.enum(['rehearsal','live']),requestId:z.string().max(80)}).strict(),
  z.object({type:z.literal('heartbeat')}).strict(),
+ z.object({type:z.literal('pause'),paused:z.boolean(),requestId:z.string().max(80)}).strict(),
  z.object({type:z.literal('inject'),scenario:z.enum(['dust','oxygen','hull','battery','water','food']),requestId:z.string().max(80)}).strict(),
  z.object({type:z.literal('random'),requestId:z.string().max(80)}).strict(),
  z.object({type:z.literal('text'),text:z.string().min(1).max(240),requestId:z.string().max(80)}).strict(),
@@ -16,17 +18,22 @@ export function missionSocket(req:Request,env:Env):Response {
  if(req.headers.get('Upgrade')?.toLowerCase()!=='websocket')return new Response('WebSocket required',{status:426});
  const origin=req.headers.get('Origin');if(origin&&origin!==new URL(req.url).origin)return new Response('Origin not allowed',{status:403});
  const pair=new WebSocketPair(),client=pair[0],socket=pair[1];socket.accept();
- let g:Game|null=null,astra:Astra|null=null,upstream:WebSocket|null=null,began=0,closed=false,opening=false,liveSlot=false,parsing=false,lastActivity=Date.now();
+ attachMission(socket,env,req);
+ return new Response(null,{status:101,webSocket:client});
+}
+export interface MissionChannel {send(data:string):void;close(code?:number,reason?:string):void;addEventListener(type:string,listener:(event:{data?:unknown})=>void):void;}
+export function attachMission(socket:MissionChannel,env:Env,req:Request){
+ let g:Game|null=null,astra:Astra|null=null,upstream:WebSocket|null=null,clock=new MissionClock(Date.now()),closed=false,opening=false,liveSlot=false,parsing=false,lastActivity=Date.now();
  let lastHeartbeat=0;const seen=new Set<string>();
  const send=(data:unknown)=>{if(!closed)try{socket.send(JSON.stringify(data));}catch{close();}};
- const snapshot=()=>{if(g)send({type:'snapshot',game:publicGame(g)});};
+ const snapshot=()=>{if(g)send({type:'snapshot',game:publicGame(g),paused:clock.paused});};
  const close=()=>{if(closed)return;closed=true;astra?.stop();upstream?.close();if(liveSlot){liveCount--;liveSlot=false;}try{socket.close(1000,'Mission ended');}catch{}};
  const interrupt=(text:string)=>{if(g){g.phase='interrupted';g.jobs=[];g.operatorText=text;g.operatorState='Connection interrupted';log(g,'system',text);snapshot();}close();};
  const advance=()=>{
    if(!g||g.phase!=='running')return;
-   const target=Math.min(180,Math.floor((Date.now()-began)/1000));
+   const target=clock.advance(Date.now());
    while(g.tick<target&&g.phase==='running'){const done=tick(g);if(g.mode==='rehearsal')rehearse(g);else astra?.completed(done);}
-   astra?.heartbeat();snapshot();if(g.phase!=='running')close();
+   if(!clock.paused)astra?.heartbeat();snapshot();if(g.phase!=='running')close();
  };
  const parseLive=async(text:string):Promise<{id:ScenarioId|null;title:string}>=>{
    if(!g||g.responses>=24)throw Error('Round response allowance reached.');g.responses++;
@@ -40,7 +47,8 @@ export function missionSocket(req:Request,env:Env):Response {
   if(closed)return;
   try{
    if(typeof event.data!=='string'||event.data.length>2000)throw Error('Invalid message.');
-   const m=message.parse(JSON.parse(event.data));lastActivity=Date.now();
+   const m=missionMessage.parse(JSON.parse(event.data));lastActivity=Date.now();
+   if(m.type==='pause'){if(!g||g.phase!=='running')throw Error('Begin a mission first.');advance();clock.pause(m.paused,Date.now());snapshot();send({type:'ack',requestId:m.requestId,message:m.paused?'Time paused.':'Time resumed.'});return;}
    if(m.type==='heartbeat'){if(Date.now()-lastHeartbeat<500)return;lastHeartbeat=Date.now();advance();return;}
    if(seen.has(m.requestId)){snapshot();return;}if(seen.size>=60)throw Error('Too many requests. Start another mission.');seen.add(m.requestId);
    if(m.type==='start'){
@@ -56,7 +64,7 @@ export function missionSocket(req:Request,env:Env):Response {
       if(!response.webSocket)throw Error(response.status===401||response.status===403?'Astra API access needs configuration. Rehearsal is available.':'Could not connect to Astra. Rehearsal is available.');
       upstream=response.webSocket;upstream.accept();
     }
-    if(closed){upstream?.close();return;}g=initialGame(m.mode,Math.floor(Math.random()*1000000));g.roundId=crypto.randomUUID();start(g);began=Date.now();opening=false;
+    if(closed){upstream?.close();return;}g=initialGame(m.mode,Math.floor(Math.random()*1000000));g.roundId=crypto.randomUUID();start(g);clock=new MissionClock(Date.now());opening=false;
     if(upstream){astra=new Astra(g,{send:s=>upstream!.send(s),close:()=>{try{upstream?.close();}catch{}}},snapshot);upstream.addEventListener('message',e=>{try{advance();if(typeof e.data==='string')astra?.receive(JSON.parse(e.data));}catch{interrupt('Invalid response from the live operator.');}});upstream.addEventListener('close',()=>{if(g?.phase==='running')interrupt('Astra disconnected. Start a fresh mission to reconnect.');});upstream.addEventListener('error',()=>interrupt('Astra connection failed.'));astra.start();}
     snapshot();return;
    }
@@ -75,7 +83,7 @@ export function missionSocket(req:Request,env:Env):Response {
  });
  socket.addEventListener('close',close);socket.addEventListener('error',close);
  // A bounded socket lifetime also cleans up abandoned live slots. No durable sessions.
- const expiry=setTimeout(close,240000);socket.addEventListener('close',()=>clearTimeout(expiry));
+ const expiry=setTimeout(close,900000);socket.addEventListener('close',()=>clearTimeout(expiry));
  void lastActivity;
- return new Response(null,{status:101,webSocket:client});
+
 }
