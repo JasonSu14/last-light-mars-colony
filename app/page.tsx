@@ -1,88 +1,63 @@
 "use client";
+import { useState } from 'react';
+import { useMission } from './use-mission';
+import { eligible, LABELS, SCENARIOS } from '@/game/engine';
+import type { Building, Resource, ScenarioId } from '@/game/engine';
+import { ArrowRight, Crosshair, Droplets, Heart, Leaf, Pause, Play, Radio, RotateCcw, Shuffle, Sparkles, Users, Wind, Wrench, X, Zap } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 
-import { useState } from "react";
-import { useMission } from "./use-mission";
-import { eligible, LABELS } from "@/game/engine";
-import type { Building, Resource, ScenarioId } from "@/game/engine";
-import { ArrowUpRight, Activity, BatteryCharging, ChevronRight, CircleHelp, Cpu, Droplets, HeartPulse, Leaf, Radio, RotateCcw, ShieldCheck, Shuffle, Sparkles, TriangleAlert, Users, Wind, Zap, Play, Satellite, Wrench, House, Sun, FlaskConical } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
-
-const buildings = [
-  { id: "solar", label: "Solar array", code: "PWR–01", icon: Sun, x: 25, y: 24 },
-  { id: "habitat", label: "Habitat", code: "HAB–01", icon: House, x: 69, y: 23 },
-  { id: "lifeSupport", label: "Life support", code: "OXY–01", icon: Wind, x: 49, y: 51 },
-  { id: "recycler", label: "Water recycler", code: "H₂O–01", icon: Droplets, x: 23, y: 78 },
-  { id: "greenhouse", label: "Greenhouse", code: "AGR–01", icon: Leaf, x: 76, y: 76 },
+const sites:{id:Building;x:number;y:number;icon:typeof Wind}[]=[
+ {id:'solar',x:26.7,y:57,icon:Zap},{id:'habitat',x:50.4,y:22.8,icon:Users},
+ {id:'lifeSupport',x:27.3,y:33.1,icon:Wind},{id:'greenhouse',x:75.2,y:35,icon:Leaf},{id:'recycler',x:66.8,y:55.2,icon:Droplets},
 ];
-const resources = [
-  { id: "oxygen", label: "Oxygen", value: 80, icon: Wind, unit: "AIR RESERVE" },
-  { id: "power", label: "Power", value: 75, icon: Zap, unit: "BATTERY RESERVE" },
-  { id: "water", label: "Water", value: 80, icon: Droplets, unit: "WATER RESERVE" },
-  { id: "food", label: "Food", value: 85, icon: Leaf, unit: "FOOD RESERVE" },
-  { id: "stability", label: "Stability", value: 85, icon: HeartPulse, unit: "COLONY RESILIENCE" },
-];
-const scenarios = [
-  { id: "dust", title: "Dust wall", detail: "Solar output ↓ 75%", icon: Wind },
-  { id: "oxygen", title: "Oxygen failure", detail: "Life support damaged", icon: FlaskConical },
-  { id: "hull", title: "Hull puncture", detail: "Atmosphere escaping", icon: TriangleAlert },
-  { id: "battery", title: "Battery short", detail: "Power reserve ↓ 25", icon: Zap },
-  { id: "water", title: "Recycler seizure", detail: "Water system damaged", icon: Droplets },
-  { id: "food", title: "Greenhouse blight", detail: "Food supply damaged", icon: Leaf },
-];
+const reserves:{id:Resource;label:string;icon:typeof Wind}[]=[{id:'oxygen',label:'Oxygen',icon:Wind},{id:'power',label:'Power',icon:Zap},{id:'water',label:'Water',icon:Droplets},{id:'food',label:'Food',icon:Leaf},{id:'stability',label:'Stability',icon:Heart}];
+const chaosIcons={dust:Wind,oxygen:Wind,hull:Crosshair,battery:Zap,water:Droplets,food:Leaf};
+const names={dust:'Dust wall',oxygen:'Air failure',hull:'Meteor strike',battery:'Blackout',water:'Water crisis',food:'Alien blight'};
 
-export default function Home() {
-  const { game:g,liveAvailable,connecting,parsing,notice,setNotice,begin,inject,random,text,reset,report }=useMission();
-  const started=g.phase==='running';
-  const finished=['won','lost','interrupted'].includes(g.phase);
-  const cooldown=Math.max(0,12-(g.tick-g.lastChaos));
-  const remaining=Math.max(0,180-g.tick);
-  const disabled=!started||cooldown>0||parsing||g.injections>=12;
-  const startMode=(mode:'live'|'rehearsal')=>{void begin(mode).catch(report)};
-  const submitText=()=>{if(!chaosText.trim())return;void text(chaosText).then(()=>setChaosText('')).catch(report)};
-  const [chaosText, setChaosText] = useState("");
-
-  return <main className="mission">
-    <header className="masthead">
-      <a className="brand" href="/" aria-label="Last Light home"><span className="brand-mark"><Satellite size={23} strokeWidth={1.5}/></span><span>LAST LIGHT<small>MARS COLONY / MISSION CONTROL</small></span></a>
-      <div className="mission-coordinates"><span>38.4° N / 141.6° E</span><b>UTOPIA PLANITIA</b></div>
-      <div className="header-right"><span className="mode-badge"><span className="status-dot"/> {g.mode==='live'?'LIVE ASTRA':'REHEARSAL'}</span><span className="sol">SOL <b>187</b></span></div>
-    </header>
-    <section className="mission-heading">
-      <div><div className="eyebrow"><span className="small-line"/> HUMANITY’S LAST OUTPOST</div><h1>How much chaos can<br className="mobile-break"/> Astra handle<span>?</span></h1><p>You create the crisis. Astra keeps the colony alive.</p></div>
-      <div className="mission-clock"><span>UNTIL RESCUE</span><strong>{String(Math.floor(remaining/60)).padStart(2,'0')}<span>:</span>{String(remaining%60).padStart(2,'0')}</strong><small><Users size={13}/> <b>{g.population}</b> colonists counting on Astra</small></div>
-    </section>
-    <div className="workspace">
-      <aside className="telemetry panel">
-        <div className="panel-heading"><h2><Activity size={14}/> COLONY VITALS</h2><span className="quiet-dot"/></div>
-        <div className="resource-list">{resources.map(r=><div className="resource" key={r.id}><div className="resource-top"><span><r.icon size={16}/>{r.label}</span><strong>{Math.round(g.resources[r.id as Resource])}<small>%</small></strong></div><Progress value={g.resources[r.id as Resource]} className={`resource-progress ${g.resources[r.id as Resource]<20?'critical':g.resources[r.id as Resource]<45?'warning':''}`} aria-label={`${r.label} reserve`}/><div className="resource-caption"><span>{r.unit}</span><span className={g.resources[r.id as Resource]<20?'critical-text':'nominal'}>{g.resources[r.id as Resource]<20?'CRITICAL':g.trends[r.id as Resource]<-.04?'↓ FALLING':'NOMINAL'}</span></div></div>)}</div>
-        <div className="reserves"><span>EMERGENCY SUPPLIES</span><div><Wrench size={14}/><b>{g.parts}</b> spare parts</div><div><BatteryCharging size={14}/><b>{g.canisters}</b> oxygen canisters</div><div><Users size={14}/><b>{2-g.jobs.filter(j=>j.type==='repair').length}</b> repair crews available</div></div>
-      </aside>
-      <section className="colony panel">
-        <div className="panel-heading"><h2><Radio size={14}/> COLONY OVERVIEW</h2><span className="map-status"><span className="status-dot"/> {g.crises.length?`${g.crises.length} ACTIVE CRISES`:'ALL SYSTEMS NOMINAL'}</span></div>
-        <div className={`colony-map ${g.crises.some(c=>c.id==='dust')?'dust-active':''}`}>
-          <div className="map-coordinate top">SECTOR 07 — UT0P / NETWORK TOPOLOGY</div>
-          <svg className="network" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M25 24 H49 V51 M69 23 H49 M23 78 H49 V51 M76 76 H49"/></svg>
-          <div className="map-ring ring-one"/><div className="map-ring ring-two"/>
-          {buildings.map(b=><button className={`module module-${b.id} ${g.health[b.id as Building]<80?'damaged':''} ${g.jobs.some(j=>j.type==='repair'&&j.building===b.id)?'repairing':''}`} key={b.id} style={{left:`${b.x}%`,top:`${b.y}%`}} onClick={()=>setNotice(`${b.label}: ${g.health[b.id as Building]}% integrity. ${g.jobs.some(j=>j.building===b.id)?'Operations in progress.':'No active operations.'}`)}><span className="module-code">{b.code}</span><span className="module-icon"><b.icon size={28} strokeWidth={1.3}/></span><strong>{b.label}</strong><span className="module-condition"><i/> {g.health[b.id as Building]}% INTEGRITY</span></button>)}
-          <span className="map-cross cross-one">+</span><span className="map-cross cross-two">+</span>
-          <div className="map-scale"><i/><span>CONNECTED SYSTEMS</span></div>
-          {!started && <div className="start-overlay"><div className="start-card"><span className="start-kicker"><ShieldCheck size={15}/> {finished?'MISSION REPORT':'MISSION BRIEF'}</span><h2>{finished?(g.phase==='won'?'Humanity gets another sunrise.':g.phase==='lost'?'The colony went dark.':'Mission interrupted.'):<>{'42 lives. 3 minutes.'}<br/>You control the chaos.</>}</h2><p>{finished?(g.phase==='interrupted'?g.operatorText:`${g.population} colonists survived. ${g.resolved} crises resolved. Lowest oxygen: ${Math.round(g.minOxygen)}%.`):'Keep at least 34 colonists alive until rescue. Create a crisis, then watch the operator respond.'}</p>{finished?<Button className="start-button" onClick={reset}><RotateCcw size={15}/> New mission</Button>:<>{liveAvailable&&<Button className="start-button" disabled={connecting} onClick={()=>startMode('live')}><Sparkles size={15}/> {connecting?'Connecting…':'Launch with Astra'}<ArrowUpRight size={17}/></Button>}<Button className={liveAvailable?'rehearsal-button':'start-button'} disabled={connecting} onClick={()=>startMode('rehearsal')}><Play size={15} fill="currentColor"/>{connecting?'Connecting…':'Begin rehearsal'}<ArrowUpRight size={17}/></Button></>}<small>{g.mode==='live'?'GPT-6 ASTRA · LIVE OPERATOR':'REHEARSAL · SCRIPTED OPERATOR'}</small>{!liveAvailable&&!finished&&<small className="live-pending">Live Astra connection pending</small>}</div></div>}
-        </div>
-        <div className="map-footer"><span><Users size={14}/><strong>{g.population} / 42</strong> ALIVE</span><span><ShieldCheck size={14}/> {g.powerMode==='life_support'?'LIFE SUPPORT PRIORITIZED':'RESCUE WINDOW OPEN'}</span></div>
-      </section>
-      <aside className="operator panel">
-        <div className="panel-heading"><h2><Sparkles size={14}/> COLONY OPERATOR</h2><span className="operator-led"/></div>
-        <div className="operator-identity"><div className="astra-symbol"><Sparkles size={28} strokeWidth={1.3}/></div><div><h2>ASTRA<span> / {g.mode==='live'?'LIVE':'SIM'}</span></h2><p>{g.mode==='live'?'GPT-6 · Colony operator':'Scripted rehearsal operator'}</p></div></div>
-        <div className="effort"><span>REASONING EFFORT</span><div className={`effort-${g.effort}`}><i/><i/><i/><b>{g.mode==='rehearsal'?'SIM · ':''}{g.pendingEffort?`${g.pendingEffort.toUpperCase()} QUEUED`:g.effort.toUpperCase()}</b></div></div>
-        <div className="operator-message"><span className="eyebrow">CURRENT OBJECTIVE</span><h3>{g.crises.length?'Stabilize the colony.':g.phase==='won'?'Everyone who made it. A future.':'Keep the lights on.'}<br/>{g.crises.length?'Protect every life.':'Keep everyone breathing.'}</h3><p>{g.operatorText}</p><div className="message-signature"><span className="status-dot"/>{g.operatorState.toUpperCase()}</div></div>
-        <div className="jobs"><h3>ACTIVE OPERATIONS <span>{g.jobs.length}</span></h3>{g.jobs.length?g.jobs.map(j=><div className="job" key={j.id}><div>{j.type==='repair'?<Wrench size={12}/>:<Cpu size={12}/>}<span>{LABELS[j.building]}</span><b>{j.due-g.tick}s</b></div><small>{j.type==='repair'?'REPAIR CREW DEPLOYED':'ASYNC DIAGNOSTIC'}</small><Progress value={100*(g.tick-j.start)/(j.due-j.start)} aria-label={`${j.type} progress`} className="job-progress"/></div>):<div className="jobs-empty"><Cpu size={22} strokeWidth={1}/><p>No operations running</p><small>Diagnostics and repairs appear here.</small></div>}</div>
-        <div className="operator-note"><CircleHelp size={14}/><span>Disasters can arrive while Astra is working. Its next move has to adapt.</span></div>
-      </aside>
-    </div>
-    <section className="chaos-console panel"><div className="chaos-heading"><div><span className="chaos-index">02 /</span><h2>Be the unpredictable part.</h2></div><span>{parsing?'INTERPRETING…':cooldown&&started?`NEXT CRISIS IN ${cooldown}s`:`CHAOS CONTROL · ${g.injections}/12`}</span></div><div className="chaos-input-row"><div className="chaos-field"><TriangleAlert size={17}/><input aria-label="Describe a disaster" maxLength={240} value={chaosText} onChange={e=>setChaosText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!disabled)submitText()}} placeholder="A meteor tears through the oxygen processor…"/><Button className="inject-button" disabled={disabled||!chaosText.trim()} onClick={submitText}>Inject chaos <ChevronRight size={16}/></Button></div><Button className="random-button" disabled={disabled} onClick={()=>{void random().catch(report)}}><Shuffle size={17}/> Create chaos</Button></div><div className="scenario-row">{scenarios.map(s=><button disabled={disabled||!!eligible(g,s.id as ScenarioId)} title={eligible(g,s.id as ScenarioId)||s.detail} key={s.id} onClick={()=>{void inject(s.id as ScenarioId).catch(report)}}><s.icon size={15}/><span>{s.title}</span><ChevronRight size={12}/></button>)}</div></section>
-    {notice&&<div className="notice" role="status"><Activity size={14}/><span>{notice}</span><button aria-label="Dismiss notice" onClick={()=>setNotice('')}>×</button></div>}
-    <section className="event-feed"><div><span className="status-dot"/><h2>MISSION LOG</h2><span className="log-count">{String(g.log.length||1).padStart(2,'0')}</span>{g.mode==='live'&&<span className="response-count">{g.responses}/24 responses</span>}</div><div className="log-entries">{g.log.length?g.log.slice(-6).reverse().map(entry=><p className={`log-${entry.kind}`} key={entry.id}><time>T+{String(entry.tick).padStart(3,'0')}</time><span>{entry.text}</span><small>{entry.kind.toUpperCase()}</small></p>):<p><time>T+000</time><span>Mission control ready. All 42 colonists accounted for.</span><small>SYSTEM</small></p>}</div></section>
-    <footer className="page-footer"><span>LAST LIGHT <i>/</i> A MARS SURVIVAL EXPERIMENT</span><span>YOU BRING THE CHAOS. WE’LL SEE WHAT SURVIVES.</span><button onClick={reset}><RotateCcw size={12}/> Reset mission</button></footer>
-  </main>;
+export default function Home(){
+ const {game:g,paused,pause,liveAvailable,connecting,parsing,notice,setNotice,begin,inject,random,text,reset,report}=useMission();
+ const [composer,setComposer]=useState(false),[target,setTarget]=useState<Building|null>(null),[selection,setSelection]=useState<ScenarioId|'random'|'custom'>('random');
+ const [draft,setDraft]=useState(''),[busy,setBusy]=useState(false),[composerError,setComposerError]=useState(''),[showLog,setShowLog]=useState(false);
+ const running=g.phase==='running',finished=['won','lost','interrupted'].includes(g.phase),cooldown=Math.max(0,12-(g.tick-g.lastChaos)),remaining=Math.max(0,180-g.tick);
+ const resetAll=()=>{reset();setComposer(false);setDraft('');setBusy(false);setComposerError('');};
+ const openChaos=async(building:Building|null=null,scenario:ScenarioId|'random'|'custom'='random')=>{
+  if(!running||busy)return;setBusy(true);setComposerError('');setTarget(building);setSelection(scenario);
+  try{await pause(true);setComposer(true);}catch(error){report(error);}finally{setBusy(false);}
+ };
+ const closeChaos=async()=>{if(busy)return;if(!running){setComposer(false);return;}setBusy(true);try{await pause(false);setComposer(false);setComposerError('');}catch(error){setComposerError(error instanceof Error?error.message:'Could not resume.');}finally{setBusy(false);}};
+ const unleash=async()=>{setBusy(true);setComposerError('');try{if(selection==='custom')await text(draft);else if(selection==='random')await random();else await inject(selection);await pause(false);setComposer(false);setDraft('');}catch(error){setComposerError(error instanceof Error?error.message:'Could not apply this disaster.');}finally{setBusy(false);}};
+ const chosen=SCENARIOS.find(s=>s.id===selection);
+ const unavailable=selection==='random'?(SCENARIOS.some(s=>!eligible(g,s.id))?null:'Wait for the next chaos charge.'):selection==='custom'?(cooldown?`Next chaos charge in ${cooldown}s. Resume time to recharge.`:!draft.trim()?'Describe your disaster first.':null):eligible(g,selection);
+ const lastChaos=g.log.filter(l=>l.kind==='chaos').at(-1);
+ return <main className="game-shell">
+  <header className="game-header"><a href="/" className="wordmark">LAST LIGHT<span>MARS SURVIVAL</span></a><div className={`rescue-clock ${paused?'clock-paused':''}`}><span>{paused?<><Pause size={12}/> TIME PAUSED</>:'RESCUE IN'}</span><strong>{Math.floor(remaining/60)}:{String(remaining%60).padStart(2,'0')}</strong></div><div className="crew-count"><Users size={18}/><strong>{g.population}<small> / 42</small></strong><span>STILL HERE</span></div></header>
+  <section className="world" aria-label="Interactive Mars colony">
+   <div className="world-surface">
+    <img className="planet-art" src="/mars-colony.png" alt="A small colony of habitats, solar panels, a greenhouse, life support tanks, and a water recycler on the rust-red surface of Mars." width="1536" height="1024" fetchPriority="high"/>
+    <div className="scene-shade"/>
+    <div className="location-stamp">UTOPIA PLANITIA <span>38.4° N · SOL 187</span></div>
+    <div className="world-controls"><span className="mode-label"><i/>{g.mode==='live'?'LIVE ASTRA':'FREE REHEARSAL'}</span><button onClick={resetAll} aria-label="Restart mission" title="Restart mission"><RotateCcw size={16}/></button></div>
+    {sites.map(b=>{const health=g.health[b.id],jobs=g.jobs.filter(j=>j.building===b.id),crisis=g.crises.find(c=>c.building===b.id),damaged=health<80||!!crisis;return <button key={b.id} className={`site-target ${damaged?'site-danger':''} ${jobs.length?'site-working':''}`} style={{left:`${b.x}%`,top:`${b.y}%`}} disabled={!running||busy} onClick={()=>{void openChaos(b.id,SCENARIOS.find(s=>s.building===b.id)!.id)}} aria-label={`Target ${LABELS[b.id]}, ${health}% integrity${jobs.length?', operations in progress':''}`}>
+     <span className="target-ring"><b.icon size={19}/><Crosshair size={24} className="target-crosshair"/></span><span className="target-caption"><strong>{LABELS[b.id]}</strong><small>{jobs.length?<><Wrench size={11}/>{jobs[0].type==='repair'?'Repair':'Scan'} · {jobs[0].due-g.tick}s</>:crisis?crisis.title:`${health}% integrity`}</small><span className="target-health"><i style={{width:`${health}%`}}/></span></span>
+    </button>})}
+    {running&&<div className={`scene-instruction ${paused?'is-paused':''}`}>{paused?<><Pause size={15}/> The colony is holding its breath.</>:<><Crosshair size={16}/>{cooldown?`Chaos recharging · ${cooldown}s`:'Pick a building. Make something go wrong.'}</>}</div>}
+    {!running&&<div className="brief-wrap"><div className="mission-brief"><span className="chapter">{finished?'THE AFTERMATH':'YOU ARE THE CHAOS'}</span><h1>{finished?(g.phase==='won'?<>Still breathing.<br/>Against the odds.</>:g.phase==='lost'?<>The last light<br/>went out.</>:<>Signal lost.<br/>Try again.</>):<>A tiny colony.<br/>A very bad day.</>}</h1><p>{finished?(g.phase==='interrupted'?g.operatorText:`${g.population} survivors. ${g.resolved} crises resolved. ${g.injections} disasters thrown at the colony.`):'42 lives. Three minutes until rescue. You unleash disasters. The operator tries to keep everyone alive.'}</p>{finished?<Button className="primary-action" onClick={resetAll}><RotateCcw size={17}/> Play again</Button>:<div className="launch-actions"><Button className="primary-action" disabled={connecting} onClick={()=>{void begin(liveAvailable?'live':'rehearsal').catch(report)}}><Play size={16} fill="currentColor"/>{connecting?'Connecting…':liveAvailable?'Challenge Astra':'Start the chaos'}<ArrowRight size={18}/></Button>{liveAvailable&&<button onClick={()=>{void begin('rehearsal').catch(report)}} disabled={connecting}>Play free rehearsal</button>}</div>}<small>{g.mode==='live'?'GPT-6 ASTRA · LIVE OPERATOR':'Scripted operator · No API calls'}</small></div></div>}
+    {running&&lastChaos&&g.tick-lastChaos.tick<7&&!paused&&<div className="disaster-alert" key={lastChaos.id}><Zap size={18}/><div><span>DISASTER RELEASED</span><strong>{g.crises.at(-1)?.title||'Power disruption'}</strong></div></div>}
+    <div className="ground-label">OUTPOST 01 <span>THE ONLY HOME FOR 225 MILLION KM</span></div>
+   </div>
+   <div className="vitals-strip" aria-label="Colony resources">{reserves.map(r=><div className={`vital ${g.resources[r.id]<25?'vital-critical':''}`} key={r.id}><r.icon size={17}/><span>{r.label}</span><strong>{Math.round(g.resources[r.id])}<small>%</small></strong><Progress value={g.resources[r.id]} aria-label={`${r.label} reserve`}/></div>)}</div>
+  </section>
+  <section className="play-dock" aria-label="Chaos controls">
+   <div className="dock-title"><div><span className="chapter">YOUR NEXT MOVE</span><h2>Ruin their day.</h2></div><span>{g.injections}/12 disasters <i>·</i> {cooldown&&running?`${cooldown}s to recharge`:'Choose your trouble'}</span></div>
+   <div className="chaos-hand">{SCENARIOS.map((s,i)=>{const Icon=chaosIcons[s.id];return <button className={`chaos-card card-${s.id}`} key={s.id} disabled={!running||busy||!!eligible(g,s.id)} title={eligible(g,s.id)||s.detail} onClick={()=>{void openChaos(s.building,s.id)}}><span className="card-number">0{i+1}</span><Icon size={25} strokeWidth={1.5}/><strong>{names[s.id]}</strong><small>{LABELS[s.building]}</small><ArrowRight size={15} className="card-arrow"/></button>})}<div className="wild-cards"><Button disabled={!running||busy||cooldown>0||g.injections>=12} className="random-action" onClick={()=>{void openChaos(null,'random')}}><Shuffle size={19}/> Surprise me</Button><Button disabled={!running||busy||cooldown>0||g.injections>=12} variant="outline" className="custom-action" onClick={()=>{void openChaos(null,'custom')}}><Sparkles size={17}/> Write your own</Button></div></div>
+   <p className="pause-hint"><Pause size={12}/> Time pauses while you choose. Release the disaster to watch the response.</p>
+  </section>
+  <section className="operator-radio" aria-label="Operator response"><div className="radio-avatar"><Radio size={24}/><i/></div><div className="radio-copy"><div className="radio-heading"><strong>{g.mode==='live'?'ASTRA':'REHEARSAL OPERATOR'}</strong><span>{g.mode==='live'?'':'SIMULATED · '}{g.pendingEffort||g.effort} effort</span></div><p>{g.operatorText}</p><div className="operation-tags">{g.jobs.map(j=><span key={j.id}><Wrench size={12}/>{LABELS[j.building]} · {j.type} · {j.due-g.tick}s</span>)}</div></div><button className="log-toggle" onClick={()=>setShowLog(!showLog)} aria-expanded={showLog}>{showLog?'Hide':'Mission'} log <span>{g.log.length}</span></button></section>
+  {showLog&&<section className="mission-log" aria-label="Mission log">{g.log.slice().reverse().map(l=><p key={l.id} className={`log-${l.kind}`}><time>+{String(l.tick).padStart(3,'0')}s</time><span>{l.text}</span></p>)}</section>}
+  {notice&&!composer&&<div className="toast" role="status"><span>{notice}</span><button aria-label="Dismiss notice" onClick={()=>setNotice('')}><X size={15}/></button></div>}
+  <footer><span>LAST LIGHT <i>/</i> YOU BRING THE CHAOS.</span><span>{g.parts} spare parts · {g.canisters} oxygen canisters · {2-g.jobs.filter(j=>j.type==='repair').length} crews free</span></footer>
+  <Dialog open={composer} onOpenChange={open=>{if(!open)void closeChaos()}}><DialogContent className="chaos-dialog" showCloseButton={false} onEscapeKeyDown={e=>{if(busy)e.preventDefault()}} onPointerDownOutside={e=>e.preventDefault()}><div className="dialog-kicker"><Pause size={14}/> TIME IS PAUSED <span>{remaining}s until rescue</span></div><DialogTitle>{target?`Target: ${LABELS[target]}`:'Make Mars a little less hospitable.'}</DialogTitle><DialogDescription>The clock, reserves, and repair crews are frozen. Choose your disaster, then release it.</DialogDescription><div className="disaster-picker">{SCENARIOS.filter(s=>!target||s.building===target).map(s=><button key={s.id} aria-pressed={selection===s.id} disabled={busy||!!eligible(g,s.id)} onClick={()=>setSelection(s.id)}><strong>{names[s.id]}</strong><span>{s.detail}</span></button>)}<button aria-pressed={selection==='random'} disabled={busy} onClick={()=>setSelection('random')}><strong><Shuffle size={15}/> Surprise me</strong><span>A random available disaster across the colony.</span></button><button aria-pressed={selection==='custom'} disabled={busy} onClick={()=>setSelection('custom')}><strong><Sparkles size={15}/> Write your own</strong><span>Describe a disaster involving air, power, water, food, or the habitat.</span></button></div>{selection==='custom'&&<label className="custom-draft">YOUR DISASTER<textarea autoFocus maxLength={240} disabled={busy} value={draft} onChange={e=>setDraft(e.target.value)} placeholder="A meteor punches a hole through the habitat…"/><small>{draft.length}/240 · {g.mode==='rehearsal'?'Keywords map your idea to a preset disaster.':'Astra maps your idea to a supported disaster.'}</small></label>}{chosen&&<p className="impact-preview"><Crosshair size={17}/>{chosen.detail}</p>}{(unavailable||composerError)&&<p className="composer-error" role="status">{composerError||unavailable}</p>}<div className="dialog-actions"><Button variant="ghost" disabled={busy} onClick={()=>{void closeChaos()}}>Cancel & resume</Button><Button className="primary-action" disabled={busy||parsing||!!unavailable} onClick={()=>{void unleash()}}>{busy||parsing?'Applying…':'Unleash disaster'}<Zap size={16}/></Button></div></DialogContent></Dialog>
+ </main>;
 }
