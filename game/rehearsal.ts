@@ -1,22 +1,25 @@
 import { initialGame, start, tick, rehearse, inject, randomChaos, interpretRehearsal } from './engine.ts';
 import type { ScenarioId } from './engine.ts';
+import { MissionClock } from './clock.ts';
 
 /** Browser rehearsal has no network or credentials. Live games use the server. */
 export class Rehearsal {
   readonly game;
-  private readonly began: number;
+  private readonly clock: MissionClock;
   constructor(began: number, seed: number) {
-    this.began = began;
+    this.clock = new MissionClock(began);
     this.game = initialGame('rehearsal', seed);
     start(this.game);
   }
   advance(now: number) {
-    const target = Math.min(180, Math.floor(Math.max(0, now - this.began) / 1000));
+    const target = this.clock.advance(now);
     while (this.game.phase === 'running' && this.game.tick < target) {
       tick(this.game);
       rehearse(this.game);
     }
   }
+  pause(value: boolean, now: number) { this.advance(now); this.clock.pause(value, now); }
+  get paused() { return this.clock.paused; }
   command(data: Record<string, unknown>, now: number) {
     this.advance(now);
     if (this.game.phase !== 'running') throw Error('Begin a mission first.');
