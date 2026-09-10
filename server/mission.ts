@@ -24,6 +24,7 @@ export function missionSocket(req:Request,env:Env):Response {
 export interface MissionChannel {send(data:string):void;close(code?:number,reason?:string):void;addEventListener(type:string,listener:(event:{data?:unknown})=>void):void;}
 export function attachMission(socket:MissionChannel,env:Env,req:Request){
  let g:Game|null=null,astra:Astra|null=null,upstream:WebSocket|null=null,clock=new MissionClock(Date.now()),closed=false,opening=false,liveSlot=false,parsing=false,lastActivity=Date.now();
+ const pausedApiEvents:Parameters<Astra['receive']>[0][]=[];
  let lastHeartbeat=0;const seen=new Set<string>();
  const send=(data:unknown)=>{if(!closed)try{socket.send(JSON.stringify(data));}catch{close();}};
  const snapshot=()=>{if(g)send({type:'snapshot',game:publicGame(g),paused:clock.paused});};
@@ -48,7 +49,7 @@ export function attachMission(socket:MissionChannel,env:Env,req:Request){
   try{
    if(typeof event.data!=='string'||event.data.length>2000)throw Error('Invalid message.');
    const m=missionMessage.parse(JSON.parse(event.data));lastActivity=Date.now();
-   if(m.type==='pause'){if(!g||g.phase!=='running')throw Error('Begin a mission first.');advance();clock.pause(m.paused,Date.now());snapshot();send({type:'ack',requestId:m.requestId,message:m.paused?'Time paused.':'Time resumed.'});return;}
+   if(m.type==='pause'){if(!g||g.phase!=='running')throw Error('Begin a mission first.');advance();clock.pause(m.paused,Date.now());if(!m.paused)for(const queued of pausedApiEvents.splice(0))astra?.receive(queued);snapshot();send({type:'ack',requestId:m.requestId,message:m.paused?'Time paused.':'Time resumed.'});return;}
    if(m.type==='heartbeat'){if(Date.now()-lastHeartbeat<500)return;lastHeartbeat=Date.now();advance();return;}
    if(seen.has(m.requestId)){snapshot();return;}if(seen.size>=60)throw Error('Too many requests. Start another mission.');seen.add(m.requestId);
    if(m.type==='start'){
@@ -65,7 +66,7 @@ export function attachMission(socket:MissionChannel,env:Env,req:Request){
       upstream=response.webSocket;upstream.accept();
     }
     if(closed){upstream?.close();return;}g=initialGame(m.mode,Math.floor(Math.random()*1000000));g.roundId=crypto.randomUUID();start(g);clock=new MissionClock(Date.now());opening=false;
-    if(upstream){astra=new Astra(g,{send:s=>upstream!.send(s),close:()=>{try{upstream?.close();}catch{}}},snapshot);upstream.addEventListener('message',e=>{try{advance();if(typeof e.data==='string')astra?.receive(JSON.parse(e.data));}catch{interrupt('Invalid response from the live operator.');}});upstream.addEventListener('close',()=>{if(g?.phase==='running')interrupt('Astra disconnected. Start a fresh mission to reconnect.');});upstream.addEventListener('error',()=>interrupt('Astra connection failed.'));astra.start();}
+    if(upstream){astra=new Astra(g,{send:s=>upstream!.send(s),close:()=>{try{upstream?.close();}catch{}}},snapshot);upstream.addEventListener('message',e=>{try{if(typeof e.data!=='string')return;const event=JSON.parse(e.data);if(clock.paused){if(pausedApiEvents.length>=3000){interrupt('Paused operator update limit reached. Start a fresh mission.');return;}pausedApiEvents.push(event);}else{advance();astra?.receive(event);}}catch{interrupt('Invalid response from the live operator.');}});upstream.addEventListener('close',()=>{if(g?.phase==='running')interrupt('Astra disconnected. Start a fresh mission to reconnect.');});upstream.addEventListener('error',()=>interrupt('Astra connection failed.'));astra.start();}
     snapshot();return;
    }
    advance();if(!g||g.phase!=='running')throw Error('Begin a mission first.');
