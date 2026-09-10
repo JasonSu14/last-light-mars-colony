@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "check:model": "node scripts/check-model.mjs",
-    "check:socket": "node scripts/check-socket.mjs"
+    "check:socket": "node scripts/check-socket.mjs",
+    "check:stream": "node scripts/check-stream.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
