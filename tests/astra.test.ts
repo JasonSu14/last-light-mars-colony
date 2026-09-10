@@ -7,3 +7,13 @@ test('pending steering returns required results without repeating the accepted i
 test('effort configuration is inserted at an explicit response boundary',()=>{const {a,g,sent}=setup();a.receive({type:'response.created',response:{id:'r1'}});g.pendingEffort='high';a.receive({type:'response.completed',response:{id:'r1'}});a.wake('Critical oxygen');const request=sent.at(-1)!;assert.deepEqual(request.reasoning,{effort:'low'});assert.deepEqual((request.input as unknown[])[0],{type:'configuration_update',reasoning:{effort:'high'}});assert.equal(g.effort,'high');assert.equal(g.pendingEffort,null);});
 test('duplicate function events cannot spend supplies twice; malformed args are rejected',()=>{const {a,g}=setup();const item={type:'function_call',name:'release_oxygen',call_id:'o1',arguments:'{}'};a.receive({type:'response.output_item.done',item});a.receive({type:'response.output_item.done',item});assert.equal(g.canisters,1);a.receive({type:'response.output_item.done',item:{...item,call_id:'o2',arguments:'{"extra":true}'}});assert.equal(g.canisters,1);});
 test('API failure preserves telemetry and stops live actions',()=>{const {a,g,closed}=setup();a.receive({type:'error'});assert.equal(g.phase,'interrupted');assert.equal(g.population,42);assert.equal(closed(),true);});
+
+test('API evidence is based on received IDs and reported usage, never invented',()=>{
+ const {a,g}=setup();assert.equal(g.apiReceipts.length,0);
+ a.receive({type:'response.created',response:{id:'actual-response-1'}});
+ assert.equal(g.apiReceipts[0].reportedEffort,null);assert.equal(g.apiReceipts[0].reasoningTokens,null);
+ a.receive({type:'response.output_item.done',item:{type:'function_call',name:'release_oxygen',call_id:'measured-tool',arguments:'{}'}});
+ assert.equal(g.evidence[0].responseId,'actual-response-1');
+ a.receive({type:'response.completed',response:{id:'actual-response-1',reasoning:{effort:'high'},usage:{total_tokens:210,output_tokens_details:{reasoning_tokens:90}}}});
+ assert.equal(g.apiReceipts[0].reportedEffort,'high');assert.equal(g.apiReceipts[0].reasoningTokens,90);assert.equal(g.apiReceipts[0].totalTokens,210);assert.equal(g.apiReceipts[0].status,'completed');
+});

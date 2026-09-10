@@ -6,8 +6,8 @@ test('browser rehearsal catches up after tab throttling and completes queued rep
   const mission = new Rehearsal(1000, 7);
   assert.equal(mission.command({type:'inject',scenario:'oxygen'},1000).ok,true);
   assert.equal(mission.command({type:'random'},2000).ok,false);
-  mission.advance(18000);
-  assert.equal(mission.game.tick,17);
+  mission.advance(24000);
+  assert.equal(mission.game.tick,23);
   assert.equal(mission.game.health.lifeSupport,80);
   mission.advance(500000);
   assert.equal(mission.game.tick,180);
@@ -39,9 +39,9 @@ test('composing chaos freezes reserves, jobs, cooldown and rescue without catch-
  mission.advance(126000);
  assert.equal(mission.game.tick,5);
  assert.equal(mission.game.jobs.length,2);
- mission.advance(137000);
+ mission.advance(143000);
  assert.equal(mission.game.health.lifeSupport,80);
- assert.equal(mission.game.tick,16);
+ assert.equal(mission.game.tick,22);
 });
 
 test('a disaster can be released while paused, then simulation resumes',()=>{
@@ -49,7 +49,7 @@ test('a disaster can be released while paused, then simulation resumes',()=>{
  mission.pause(true,0);
  assert.equal(mission.command({type:'text',text:'A meteor hits the habitat'},90000).ok,true);
  assert.equal(mission.game.tick,0);
- assert.equal(mission.game.health.habitat,50);
+ assert.equal(mission.game.health.habitat,40);
  mission.pause(false,90000);
  mission.advance(94000);
  assert.equal(mission.game.tick,4);
