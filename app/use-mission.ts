@@ -32,10 +32,15 @@ export function useMission(){
      try{
       const stream=await fetch(`/api/missions/${c.id}/stream`,{headers:{Authorization:`Bearer ${c.token}`},signal:c.abort.signal});
       if(!stream.ok||!stream.body)throw Error('Could not connect to mission control.');
-      const reader=stream.body.getReader(),decoder=new TextDecoder();let buffer='';
-      while(connection.current===c){const part=await reader.read();if(part.done)break;buffer+=decoder.decode(part.value,{stream:true});let boundary;
-       while((boundary=buffer.indexOf('\n\n'))!==-1){const line=buffer.slice(0,boundary);buffer=buffer.slice(boundary+2);if(!line.startsWith('data: '))continue;
-        const event=JSON.parse(line.slice(6));
+      // Keep the owning request open; read updates through ordinary HTTP polls.
+      // This also works behind gateways that buffer event-stream response bodies.
+      let anchorEndedAt=0;void stream.body.pipeTo(new WritableStream(),{signal:c.abort.signal}).then(()=>{anchorEndedAt=Date.now();}).catch(()=>{anchorEndedAt=Date.now();});
+      let cursor=0;
+      while(connection.current===c){
+       const response=await fetch(`/api/missions/${c.id}/events?after=${cursor}`,{headers:{Authorization:`Bearer ${c.token}`},signal:c.abort.signal});
+       if(!response.ok)throw Error('Could not read mission updates.');
+       const batch=await response.json() as {events:Array<{id:number;event:any}>;closed:boolean};
+       for(const row of batch.events){cursor=row.id;const event=row.event;
         if(event.type==='snapshot'){
          const next={...event.game,seen:{}} as Game;current.current=next;setGame(next);pauseState.current=!!event.paused;setPaused(pauseState.current);setConnecting(false);starting.current=false;
          if(launch.current){clearTimeout(launch.current.timer);launch.current.resolve({phase:next.phase,mode:next.mode});launch.current=null;}
@@ -43,6 +48,9 @@ export function useMission(){
         else if(event.type==='parsing')setParsing(event.active);
         else if(event.type==='ack'){setNotice(event.message);const p=pending.current.get(event.requestId);if(p){clearTimeout(p.timer);pending.current.delete(event.requestId);p.resolve({ok:true,message:event.message});}}
        }
+       if(batch.closed)break;
+       if(anchorEndedAt&&Date.now()-anchorEndedAt>5000)throw Error('Mission connection interrupted.');
+       await new Promise<void>(resolve=>setTimeout(resolve,750));
       }
      }catch(error){if(connection.current===c)setNotice(error instanceof Error?error.message:'Mission connection interrupted.');}
      finally{if(connection.current===c){disconnect();setConnecting(false);setParsing(false);if(current.current.phase==='running'){const next={...current.current,phase:'interrupted' as const,operatorState:'Connection interrupted',operatorText:'The connection ended. Start a fresh mission to reconnect.',jobs:[]};current.current=next;setGame(next);}}}
